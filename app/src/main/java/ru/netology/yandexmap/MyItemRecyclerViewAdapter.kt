@@ -1,38 +1,37 @@
 package ru.netology.yandexmap
 
-import androidx.recyclerview.widget.RecyclerView
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
-
-import ru.netology.yandexmap.placeholder.PlaceholderContent.PlaceholderItem
+import androidx.recyclerview.widget.RecyclerView
 import ru.netology.yandexmap.databinding.FragmentItemBinding
+import ru.netology.yandexmap.dto.Post
 
-/**
- * [RecyclerView.Adapter] that can display a [PlaceholderItem].
- * TODO: Replace the implementation with code for your data type.
- */
+interface OnInteractionListener {
+    fun onLike(post: Post) {}
+}
+
 class MyItemRecyclerViewAdapter(
-    private val values: List<PlaceholderItem>
+    private val values: List<Post>,
+    private val onInteractionListener: OnInteractionListener
 ) : RecyclerView.Adapter<MyItemRecyclerViewAdapter.ViewHolder>() {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-
-        return ViewHolder(
-            FragmentItemBinding.inflate(
-                LayoutInflater.from(parent.context),
-                parent,
-                false
-            )
+        val binding = FragmentItemBinding.inflate(
+            LayoutInflater.from(parent.context),
+            parent,
+            false
         )
-
+        return ViewHolder(binding)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val item = values[position]
-        holder.idView.text = item.id
-        holder.contentView.text = item.content
+        val post = values[position]
+        holder.idView.text = post.id.toString()
+        holder.contentView.text = post.text
+        holder.contentView.setOnClickListener {
+            onInteractionListener.onLike(post)
+        }
     }
 
     override fun getItemCount(): Int = values.size
@@ -40,6 +39,7 @@ class MyItemRecyclerViewAdapter(
     inner class ViewHolder(binding: FragmentItemBinding) : RecyclerView.ViewHolder(binding.root) {
         val idView: TextView = binding.itemNumber
         val contentView: TextView = binding.content
+
 
         override fun toString(): String {
             return super.toString() + " '" + contentView.text + "'"

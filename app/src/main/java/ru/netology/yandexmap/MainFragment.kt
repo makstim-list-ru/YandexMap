@@ -1,5 +1,6 @@
 package ru.netology.yandexmap
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Bundle
@@ -17,6 +18,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.navigation.fragment.findNavController
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.yandex.mapkit.Animation
 import com.yandex.mapkit.MapKitFactory
 import com.yandex.mapkit.geometry.Point
@@ -34,39 +36,30 @@ import com.yandex.mapkit.map.PlacemarkMapObject
 import com.yandex.mapkit.map.PolygonMapObject
 import com.yandex.mapkit.map.PolylineMapObject
 import com.yandex.mapkit.mapview.MapView
+import com.yandex.runtime.Runtime.getApplicationContext
 import com.yandex.runtime.image.ImageProvider
 import ru.netology.yandexmap.databinding.FragmentMainBinding
+import ru.netology.yandexmap.dto.Post
 
-// TODO: Rename parameter arguments, choose names that match
-// the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
-//private const val ARG_PARAM1 = "param1"
-//private const val ARG_PARAM2 = "param2"
-
-
-/**
- * A simple [Fragment] subclass.
- * Use the [MainFragment.newInstance] factory method to
- * create an instance of this fragment.
- */
 class MainFragment : Fragment(), CameraListener {
-    // TODO: Rename and change types of parameters
-//    private var param1: String? = null
-//    private var param2: String? = null
 
     private val startLocation = Point(59.9402, 30.315)
     private var zoomValue: Float = 16.5f
+
+    private val postList = mutableListOf<Post>()
+    private var postLiked: Post = Post(id = -1)
+
     private lateinit var mapObjectCollection: MapObjectCollection
-
     private val placemarkMapObjectList = mutableListOf<PlacemarkMapObject>()
-
     //    private lateinit var placemarkMapObject: PlacemarkMapObject
+
     private val zoomBoundary = 16.4f
     private var flagAction: FlagAction = FlagAction.OFF
 
 
     private val mapObjectVisitor = object : MapObjectVisitor {
         override fun onPlacemarkVisited(p0: PlacemarkMapObject) {
-            println("onPlacemarkVisited - text - ${p0.text}")
+//            println("onPlacemarkVisited - text - ${p0.text}")
             placemarkMapObjectList.add(p0)
         }
 
@@ -146,13 +139,19 @@ class MainFragment : Fragment(), CameraListener {
                 val viewExist = view ?: return
                 val binding = FragmentMainBinding.bind(viewExist)
                 binding.pointNameLayout.visibility = View.VISIBLE
+                binding.pointNameText.requestFocus()
                 binding.pointNameText.setOnEditorActionListener { v, actionId, event ->
+//                    println("actionId=$actionId \t event=$event \t event.keyCode=" + event.keyCode + "event.action=" + event.action)
                     if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_SEND || actionId == EditorInfo.IME_ACTION_NEXT ||
                         (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
                     ) {
                         // Perform your action when Enter or a similar action key is pressed
                         locationText = binding.pointNameText.text.toString()
+
                         setMarkerInLocation(point, locationText)
+                        postList.add(Post(0, point.latitude, point.longitude, locationText))
+                        putToFile()
+
                         binding.pointNameLayout.visibility = View.GONE
                         true // Indicate that the event was handled
                     } else {
@@ -174,10 +173,17 @@ class MainFragment : Fragment(), CameraListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-//        arguments?.let {
-//            param1 = it.getString(ARG_PARAM1)
-//            param2 = it.getString(ARG_PARAM2)
-//        }
+
+        println("MainFragment == onCreate")
+        arguments?.let {
+            val gson = Gson()
+            val token = TypeToken.getParameterized(Post::class.java).type
+            val string = it.getString("KEY_LIST_TO_MAIN")
+            if (!string.isNullOrBlank()) {
+                postLiked = gson.fromJson(string, token)
+                println(postLiked)
+            }
+        }
 
         MapKitFactory.initialize(requireContext())
     }
@@ -199,21 +205,27 @@ class MainFragment : Fragment(), CameraListener {
         val mapWindow = binding.mapview.mapWindow
         val yandexMap = binding.mapview.mapWindow.map
 
-        val gson = Gson()
-
         subscribeToLifecycle(mapView)
 
-//        yandexMap.move(
-//            CameraPosition(
-//                Point(55.751225, 37.62954),
-//                /* zoom = */ 17.0f,
-//                /* azimuth = */ 150.0f,
-//                /* tilt = */ 30.0f
-//            )
-//        )
+        mapObjectCollection =
+            binding.mapview.mapWindow.map.mapObjects // Инициализируем коллекцию различных объектов на карте
 
+        val fileExists = getFromFile()
+        if (!fileExists) setMarkerInStartLocation()
+        postList.forEach { post ->
+            setMarkerInLocation(Point(post.latitude, post.longitude), post.text)
+        }
         moveToStartLocation()
-        setMarkerInStartLocation()
+
+        if (postLiked.id == -1L) {
+            moveToStartLocation()
+//            setMarkerInStartLocation()
+        } else {
+            val point = Point(postLiked.latitude, postLiked.longitude)
+            moveToLocation(point)
+            postLiked = Post()
+//            setMarkerInLocation(point, "Вот то что искал!")
+        }
 
         yandexMap.addCameraListener(this)
         yandexMap.addInputListener(inputListener)
@@ -227,41 +239,15 @@ class MainFragment : Fragment(), CameraListener {
         binding.buttonDelete.setOnClickListener {
             flagAction = FlagAction.DELETE
         }
-
         binding.buttonList.setOnClickListener {
-            placemarkMapObjectList.clear()
-            mapObjectCollection.traverse(mapObjectVisitor)
-            val arrayStringList = ArrayList<String>()
-            placemarkMapObjectList.forEach { it ->
-                arrayStringList.add(it.toString())
-            }
+            val gson = Gson()
             val bundle = Bundle()
-            bundle.putStringArrayList("KEY",arrayStringList)
+            bundle.putSerializable("KEY_MAIN_TO_LIST", gson.toJson(postList))
 
             findNavController().navigate(R.id.action_mainFragment_to_itemFragment, bundle)
         }
 
     }
-
-//    companion object {
-//        /**
-//         * Use this factory method to create a new instance of
-//         * this fragment using the provided parameters.
-//         *
-//         * @param param1 Parameter 1.
-//         * @param param2 Parameter 2.
-//         * @return A new instance of fragment MainFragment.
-//         */
-//        // TODO: Rename and change types and number of parameters
-//        @JvmStatic
-//        fun newInstance(param1: String, param2: String) =
-//            MainFragment().apply {
-//                arguments = Bundle().apply {
-//                    putString(ARG_PARAM1, param1)
-//                    putString(ARG_PARAM2, param2)
-//                }
-//            }
-//    }
 
     private fun subscribeToLifecycle(mapView: MapView) {
         viewLifecycleOwner.lifecycle.addObserver(
@@ -309,8 +295,9 @@ class MainFragment : Fragment(), CameraListener {
         val binding = FragmentMainBinding.bind(viewExist)
         val marker =
             createBitmapFromVector(R.drawable.baseline_add_location_48) // Добавляем ссылку на картинку
-        mapObjectCollection =
-            binding.mapview.mapWindow.map.mapObjects // Инициализируем коллекцию различных объектов на карте
+//        mapObjectCollection =
+//            binding.mapview.mapWindow.map.mapObjects // Инициализируем коллекцию различных объектов на карте
+
 
         val placemarkMapObject = mapObjectCollection.addPlacemark().apply {
             geometry = location
@@ -319,10 +306,37 @@ class MainFragment : Fragment(), CameraListener {
             setText(locationText)
         } // Добавляем метку со значком
 
+//        postList.add(Post(0, location.latitude, location.longitude, locationText))
+//        putToFile()
         placemarkMapObject.addTapListener(mapObjectTapListener)
     }
 
     private fun setMarkerInStartLocation() = setMarkerInLocation()
+
+    private fun putToFile() {
+        val appContext = getApplicationContext()
+        val gson = Gson()
+        val preferences = appContext.getSharedPreferences("prefs", Context.MODE_PRIVATE)
+        preferences.edit().apply() {
+            putString("PREF_ITEM", gson.toJson(postList))
+            commit()
+        }
+    }
+
+    private fun getFromFile(): Boolean {
+        val appContext = getApplicationContext()
+        val gson = Gson()
+        val preferences = appContext.getSharedPreferences("prefs", Context.MODE_PRIVATE)
+        val string = preferences.getString("PREF_ITEM", "")
+        if (string.isNullOrBlank()) return false
+        val token = TypeToken.getParameterized(List::class.java, Post::class.java).type
+        if (!string.isNullOrBlank()) {
+            val collectedPostList: List<Post> = gson.fromJson(string, token)
+            postList.clear()
+            postList.addAll(collectedPostList)
+        }
+        return true
+    }
 
     private fun createBitmapFromVector(art: Int): Bitmap? {
         val drawable = ContextCompat.getDrawable(requireContext(), art) ?: return null
