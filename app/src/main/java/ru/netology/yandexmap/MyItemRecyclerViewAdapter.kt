@@ -5,14 +5,14 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import ru.netology.yandexmap.databinding.FragmentItemBinding
-import ru.netology.yandexmap.dto.Post
+import ru.netology.yandexmap.dto.Marker
 
 interface OnInteractionListener {
-    fun onLike(post: Post) {}
+    fun onMarker(marker: Marker) {}
 }
 
 class MyItemRecyclerViewAdapter(
-    private val values: List<Post>,
+    private val values: List<Marker>,
     private val onInteractionListener: OnInteractionListener
 ) : RecyclerView.Adapter<MyItemRecyclerViewAdapter.ViewHolder>() {
 
@@ -26,11 +26,11 @@ class MyItemRecyclerViewAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val post = values[position]
-        holder.idView.text = post.id.toString()
-        holder.contentView.text = post.text
+        val marker = values[position]
+        holder.idView.text = (position + 1).toString() + ") "
+        holder.contentView.text = marker.text
         holder.contentView.setOnClickListener {
-            onInteractionListener.onLike(post)
+            onInteractionListener.onMarker(marker)
         }
     }
 

@@ -1,6 +1,8 @@
 package ru.netology.yandexmap
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Bundle
@@ -10,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
 import androidx.fragment.app.Fragment
@@ -22,84 +25,88 @@ import com.google.gson.reflect.TypeToken
 import com.yandex.mapkit.Animation
 import com.yandex.mapkit.MapKitFactory
 import com.yandex.mapkit.geometry.Point
+import com.yandex.mapkit.location.Location
+import com.yandex.mapkit.location.LocationListener
+import com.yandex.mapkit.location.LocationStatus
 import com.yandex.mapkit.map.CameraListener
 import com.yandex.mapkit.map.CameraPosition
 import com.yandex.mapkit.map.CameraUpdateReason
-import com.yandex.mapkit.map.CircleMapObject
-import com.yandex.mapkit.map.ClusterizedPlacemarkCollection
-import com.yandex.mapkit.map.InputListener
 import com.yandex.mapkit.map.Map
 import com.yandex.mapkit.map.MapObjectCollection
 import com.yandex.mapkit.map.MapObjectTapListener
-import com.yandex.mapkit.map.MapObjectVisitor
+import com.yandex.mapkit.map.MapWindow
 import com.yandex.mapkit.map.PlacemarkMapObject
-import com.yandex.mapkit.map.PolygonMapObject
-import com.yandex.mapkit.map.PolylineMapObject
 import com.yandex.mapkit.mapview.MapView
+import com.yandex.mapkit.search.Address
+import com.yandex.mapkit.search.Response
+import com.yandex.mapkit.search.SearchFactory
+import com.yandex.mapkit.search.SearchManager
+import com.yandex.mapkit.search.SearchManagerType
+import com.yandex.mapkit.search.SearchOptions
+import com.yandex.mapkit.search.Session
+import com.yandex.mapkit.search.ToponymObjectMetadata
+import com.yandex.runtime.Error
 import com.yandex.runtime.Runtime.getApplicationContext
 import com.yandex.runtime.image.ImageProvider
 import ru.netology.yandexmap.databinding.FragmentMainBinding
-import ru.netology.yandexmap.dto.Post
+import ru.netology.yandexmap.dto.Marker
 
 class MainFragment : Fragment(), CameraListener {
 
     private val startLocation = Point(59.9402, 30.315)
     private var zoomValue: Float = 16.5f
 
-    private val postList = mutableListOf<Post>()
-    private var postLiked: Post = Post(id = -1)
+    private val markerList = mutableListOf<Marker>()
+    private var markerChose: Marker = Marker(id = -1)
 
     private lateinit var mapObjectCollection: MapObjectCollection
+    lateinit var searchManager: SearchManager
+    lateinit var searchSession: Session
     private val placemarkMapObjectList = mutableListOf<PlacemarkMapObject>()
-    //    private lateinit var placemarkMapObject: PlacemarkMapObject
 
     private val zoomBoundary = 16.4f
     private var flagAction: FlagAction = FlagAction.OFF
 
 
-    private val mapObjectVisitor = object : MapObjectVisitor {
+    private val mapObjectVisitor = object : DefaultMapObjectVisitor {
         override fun onPlacemarkVisited(p0: PlacemarkMapObject) {
-//            println("onPlacemarkVisited - text - ${p0.text}")
             placemarkMapObjectList.add(p0)
-        }
-
-        override fun onPolylineVisited(p0: PolylineMapObject) {
-            println("onPolylineVisited")
-        }
-
-        override fun onPolygonVisited(p0: PolygonMapObject) {
-            println("onPolygonVisited")
-        }
-
-        override fun onCircleVisited(p0: CircleMapObject) {
-            println("onCircleVisited")
-        }
-
-        override fun onCollectionVisitStart(p0: MapObjectCollection): Boolean {
-            println("onCollectionVisitStart")
-            return true
-        }
-
-        override fun onCollectionVisitEnd(p0: MapObjectCollection) {
-            println("onCollectionVisitEnd")
-        }
-
-        override fun onClusterizedCollectionVisitStart(p0: ClusterizedPlacemarkCollection): Boolean {
-            println("onClusterizedCollectionVisitStart")
-            return true
-        }
-
-        override fun onClusterizedCollectionVisitEnd(p0: ClusterizedPlacemarkCollection) {
-            println("onClusterizedCollectionVisitEnd")
         }
     }
 
-    private val mapObjectTapListener = MapObjectTapListener { mapObject, point ->
-        Toast.makeText(
-            requireContext(),
-            "Эрмитаж — музей изобразительных искусств",
-            Toast.LENGTH_LONG
-        ).show()
+    private val searchListener = object : Session.SearchListener {
+        override fun onSearchResponse(response: Response) {
+            val street = response.collection.children.firstOrNull()?.obj
+                ?.metadataContainer
+                ?.getItem(ToponymObjectMetadata::class.java)
+                ?.address
+                ?.components
+                ?.firstOrNull { it.kinds.contains(Address.Component.Kind.STREET) }
+                ?.name ?: "No information found"
+            Toast.makeText(requireContext(), street, Toast.LENGTH_SHORT).show()
+        }
+
+        override fun onSearchError(p0: Error) {
+            Toast.makeText(
+                requireContext(),
+                "onSearchError - ERROR is search YMap",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private val placemarkMapObjectTapListener = MapObjectTapListener { mapObject, _ ->
+
+        if (mapObject !is PlacemarkMapObject)
+            throw IllegalArgumentException("placemarkMapObjectTapListener -> Object is not valid")
+        val placemarkMapObject: PlacemarkMapObject = mapObject
+        val pointPlaceMark = placemarkMapObject.geometry
+
+//        Toast.makeText(
+//            requireContext(),
+//            "Эрмитаж — музей изобразительных искусств",
+//            Toast.LENGTH_LONG
+//        ).show()
         when (flagAction) {
             FlagAction.OFF -> {}
             FlagAction.CREATE -> {}
@@ -116,8 +123,12 @@ class MainFragment : Fragment(), CameraListener {
                         // Perform your action when Enter or a similar action key is pressed
                         val locationText = binding.pointNameText.text.toString()
                         mapObjectCollection.remove(mapObject)
-                        setMarkerInLocation(point, locationText)
+                        setMarkerInLocation(pointPlaceMark, locationText)
+                        markerListRemoveMarker(pointPlaceMark)
+                        markerListAddMarker(pointPlaceMark, locationText)
+                        putToFile()
                         binding.pointNameLayout.visibility = View.GONE
+
                         true // Indicate that the event was handled
                     } else {
                         false // Indicate that the event was not handled
@@ -127,49 +138,49 @@ class MainFragment : Fragment(), CameraListener {
 
             FlagAction.DELETE -> {
                 mapObjectCollection.remove(mapObject)
+                markerListRemoveMarker(pointPlaceMark)
+                putToFile()
             }
         }
         true
     }
 
-    private val inputListener = object : InputListener {
-        override fun onMapTap(p0: Map, point: Point) {
-            if (flagAction == FlagAction.CREATE) {
-                var locationText: String = "Memorable point"
-                val viewExist = view ?: return
-                val binding = FragmentMainBinding.bind(viewExist)
-                binding.pointNameLayout.visibility = View.VISIBLE
-                binding.pointNameText.requestFocus()
-                binding.pointNameText.setOnEditorActionListener { v, actionId, event ->
-//                    println("actionId=$actionId \t event=$event \t event.keyCode=" + event.keyCode + "event.action=" + event.action)
-                    if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_SEND || actionId == EditorInfo.IME_ACTION_NEXT ||
-                        (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
-                    ) {
-                        // Perform your action when Enter or a similar action key is pressed
-                        locationText = binding.pointNameText.text.toString()
+    private val inputListener = object : DefaultInputListener {
+        override fun onMapTap(p0: Map, p1: Point) {
+            when (flagAction) {
+                FlagAction.CREATE -> {
+                    var locationText = "Memorable point"
+                    val viewExist = view ?: return
+                    val binding = FragmentMainBinding.bind(viewExist)
+                    binding.pointNameLayout.visibility = View.VISIBLE
+                    binding.pointNameText.requestFocus()
+                    binding.pointNameText.setOnEditorActionListener { v, actionId, event ->
+                        if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_SEND || actionId == EditorInfo.IME_ACTION_NEXT ||
+                            (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
+                        ) {
+                            // Perform your action when Enter or a similar action key is pressed
+                            locationText = binding.pointNameText.text.toString()
 
-                        setMarkerInLocation(point, locationText)
-                        postList.add(Post(0, point.latitude, point.longitude, locationText))
-                        putToFile()
+                            setMarkerInLocation(p1, locationText)
+                            markerListAddMarker(p1, locationText)
+                            putToFile()
+                            binding.pointNameLayout.visibility = View.GONE
 
-                        binding.pointNameLayout.visibility = View.GONE
-                        true // Indicate that the event was handled
-                    } else {
-                        false // Indicate that the event was not handled
+                            true // Indicate that the event was handled
+                        } else {
+                            false // Indicate that the event was not handled
+                        }
                     }
+                }
+
+                FlagAction.EDIT -> {}
+                FlagAction.DELETE -> {}
+                FlagAction.OFF -> {
+                    searchSession = searchManager.submit(p1, 20, SearchOptions(), searchListener)
                 }
             }
         }
-
-        override fun onMapLongTap(
-            p0: Map,
-            p1: Point
-        ) {
-            TODO("Not yet implemented")
-        }
-
     }
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -177,15 +188,15 @@ class MainFragment : Fragment(), CameraListener {
         println("MainFragment == onCreate")
         arguments?.let {
             val gson = Gson()
-            val token = TypeToken.getParameterized(Post::class.java).type
+            val token = TypeToken.getParameterized(Marker::class.java).type
             val string = it.getString("KEY_LIST_TO_MAIN")
             if (!string.isNullOrBlank()) {
-                postLiked = gson.fromJson(string, token)
-                println(postLiked)
+                markerChose = gson.fromJson(string, token)
+                println(markerChose)
             }
         }
 
-        MapKitFactory.initialize(requireContext())
+
     }
 
     override fun onCreateView(
@@ -200,30 +211,33 @@ class MainFragment : Fragment(), CameraListener {
         super.onViewCreated(view, savedInstanceState)
 
         val binding = FragmentMainBinding.bind(view)
-
-        val mapView = binding.mapview
-        val mapWindow = binding.mapview.mapWindow
         val yandexMap = binding.mapview.mapWindow.map
 
-        subscribeToLifecycle(mapView)
+        MapKitFactory.initialize(requireContext())
 
+        subscribeToLifecycle(binding.mapview)
+
+        checkPermissions(binding.mapview.mapWindow)
+
+        searchManager = SearchFactory.getInstance().createSearchManager(SearchManagerType.ONLINE)
+        binding.mapview.mapWindow.map.addInputListener(inputListener) // Добавляем слушатель long-тапов по карте с извлечением информации
         mapObjectCollection =
             binding.mapview.mapWindow.map.mapObjects // Инициализируем коллекцию различных объектов на карте
 
         val fileExists = getFromFile()
         if (!fileExists) setMarkerInStartLocation()
-        postList.forEach { post ->
+        markerList.forEach { post ->
             setMarkerInLocation(Point(post.latitude, post.longitude), post.text)
         }
         moveToStartLocation()
 
-        if (postLiked.id == -1L) {
+        if (markerChose.id == -1L) {
             moveToStartLocation()
 //            setMarkerInStartLocation()
         } else {
-            val point = Point(postLiked.latitude, postLiked.longitude)
+            val point = Point(markerChose.latitude, markerChose.longitude)
             moveToLocation(point)
-            postLiked = Post()
+            markerChose = Marker()
 //            setMarkerInLocation(point, "Вот то что искал!")
         }
 
@@ -242,11 +256,10 @@ class MainFragment : Fragment(), CameraListener {
         binding.buttonList.setOnClickListener {
             val gson = Gson()
             val bundle = Bundle()
-            bundle.putSerializable("KEY_MAIN_TO_LIST", gson.toJson(postList))
+            bundle.putSerializable("KEY_MAIN_TO_LIST", gson.toJson(markerList))
 
             findNavController().navigate(R.id.action_mainFragment_to_itemFragment, bundle)
         }
-
     }
 
     private fun subscribeToLifecycle(mapView: MapView) {
@@ -291,8 +304,7 @@ class MainFragment : Fragment(), CameraListener {
         location: Point = startLocation,
         locationText: String = "Обязательно к посещению!"
     ) {
-        val viewExist = view ?: return
-        val binding = FragmentMainBinding.bind(viewExist)
+        view ?: return
         val marker =
             createBitmapFromVector(R.drawable.baseline_add_location_48) // Добавляем ссылку на картинку
 //        mapObjectCollection =
@@ -308,7 +320,7 @@ class MainFragment : Fragment(), CameraListener {
 
 //        postList.add(Post(0, location.latitude, location.longitude, locationText))
 //        putToFile()
-        placemarkMapObject.addTapListener(mapObjectTapListener)
+        placemarkMapObject.addTapListener(placemarkMapObjectTapListener)
     }
 
     private fun setMarkerInStartLocation() = setMarkerInLocation()
@@ -317,8 +329,8 @@ class MainFragment : Fragment(), CameraListener {
         val appContext = getApplicationContext()
         val gson = Gson()
         val preferences = appContext.getSharedPreferences("prefs", Context.MODE_PRIVATE)
-        preferences.edit().apply() {
-            putString("PREF_ITEM", gson.toJson(postList))
+        preferences.edit().apply {
+            putString("PREF_ITEM", gson.toJson(markerList))
             commit()
         }
     }
@@ -329,13 +341,27 @@ class MainFragment : Fragment(), CameraListener {
         val preferences = appContext.getSharedPreferences("prefs", Context.MODE_PRIVATE)
         val string = preferences.getString("PREF_ITEM", "")
         if (string.isNullOrBlank()) return false
-        val token = TypeToken.getParameterized(List::class.java, Post::class.java).type
-        if (!string.isNullOrBlank()) {
-            val collectedPostList: List<Post> = gson.fromJson(string, token)
-            postList.clear()
-            postList.addAll(collectedPostList)
-        }
+        val token = TypeToken.getParameterized(List::class.java, Marker::class.java).type
+        val collectedPostList: List<Marker> = gson.fromJson(string, token)
+        markerList.clear()
+        markerList.addAll(collectedPostList)
         return true
+    }
+
+    private fun markerListAddMarker(p0: Point, locationText: String) {
+        val id = markerHashCode(p0)
+        markerList.add(Marker(id, p0.latitude, p0.longitude, locationText))
+    }
+
+    private fun markerListRemoveMarker(p0: Point) {
+        val id = markerHashCode(p0)
+        val filteredMarkerList = markerList.filter { it -> it.id != id }
+        markerList.clear()
+        markerList.addAll(filteredMarkerList)
+    }
+
+    private fun markerHashCode(p0: Point): Long {
+        return (p0.latitude.toString() + p0.longitude.toString()).hashCode().toLong()
     }
 
     private fun createBitmapFromVector(art: Int): Bitmap? {
@@ -379,6 +405,60 @@ class MainFragment : Fragment(), CameraListener {
                 }
             }
         }
+    }
+
+    private fun checkPermissions(mapWindow: MapWindow) {
+        val requestPermissionLauncher =
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+                if (isGranted) enableUserLocation(mapWindow) else {
+                    Toast.makeText(
+                        requireContext(),
+                        "SORRY, The application will not work properly without PERMISSIONS",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        when { // 1. Проверяем дали/есть/нет права
+            ContextCompat.checkSelfPermission(
+                requireContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                enableUserLocation(mapWindow)
+
+                MapKitFactory.getInstance()
+                    .createLocationManager()
+                    .requestSingleUpdate(
+                        object : LocationListener {
+                            override fun onLocationUpdated(location: Location) {
+                                println(location)
+                            }
+
+                            override fun onLocationStatusUpdated(locationStatus: LocationStatus) {
+                                println(locationStatus)
+                            }
+                        }
+                    )
+            }
+            // 2. Должны показать обоснование необходимости прав
+            shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) -> {
+                // show rationale dialog
+                Toast.makeText(
+                    requireContext(),
+                    "PLEASE, Grant PERMISSIONS to make the application working properly",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            // 3. Запрашиваем права
+            else -> {
+                requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+        }
+    }
+
+    private fun enableUserLocation(mapWindow: MapWindow) {
+        val userLocation = MapKitFactory.getInstance().createUserLocationLayer(mapWindow)
+        userLocation.isVisible = true
+        userLocation.isHeadingModeActive = true
     }
 
     enum class FlagAction { CREATE, EDIT, DELETE, OFF }

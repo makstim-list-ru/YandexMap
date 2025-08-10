@@ -10,23 +10,25 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import ru.netology.yandexmap.dto.Post
+import ru.netology.yandexmap.databinding.FragmentItemListBinding
+import ru.netology.yandexmap.databinding.FragmentMainBinding
+import ru.netology.yandexmap.dto.Marker
 
 
 class ItemFragment : Fragment() {
 
-    private var postList = emptyList<Post>()
+    private var markerList = emptyList<Marker>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         arguments?.let {
             val gson = Gson()
-            val token = TypeToken.getParameterized(List::class.java, Post::class.java).type
+            val token = TypeToken.getParameterized(List::class.java, Marker::class.java).type
             val string = it.getString("KEY_MAIN_TO_LIST")
             if (!string.isNullOrBlank()) {
-                postList = gson.fromJson(string, token)
-                println(postList)
+                markerList = gson.fromJson(string, token)
+                println(markerList)
             }
         }
     }
@@ -35,26 +37,45 @@ class ItemFragment : Fragment() {
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        val view = inflater.inflate(R.layout.fragment_item_list, container, false)
 
-        // Set the adapter
-        if (view is RecyclerView) {
-            with(view) {
-                layoutManager = LinearLayoutManager(context)
-                adapter = MyItemRecyclerViewAdapter(postList, object : OnInteractionListener {
-                    override fun onLike(post: Post) {
-                        super.onLike(post)
-                        println("LIKED   $post")
-                        val gson = Gson()
-                        val bundle = Bundle()
-                        bundle.putSerializable("KEY_LIST_TO_MAIN", gson.toJson(post))
+        val binding = FragmentItemListBinding.inflate(inflater, container, false)
 
-                        findNavController().navigate(R.id.action_itemFragment_to_mainFragment2, bundle)
-                    }
-                })
+        val adapter = MyItemRecyclerViewAdapter(
+            markerList,
+            object : OnInteractionListener {
+                override fun onMarker(marker: Marker) {
+                    super.onMarker(marker)
+                    println("LIKED   $marker")
+                    val gson = Gson()
+                    val bundle = Bundle()
+                    bundle.putSerializable("KEY_LIST_TO_MAIN", gson.toJson(marker))
+
+                    findNavController().navigate(R.id.action_itemFragment_to_mainFragment2, bundle)
+                }
             }
-        }
-        return view
-    }
+        )
 
+        binding.list.adapter = adapter
+
+//        val view = inflater.inflate(R.layout.fragment_item_list, container, false)
+// Set the adapter
+//        if (view is RecyclerView) {
+//            with(view) {
+//                layoutManager = LinearLayoutManager(context)
+//                adapter = MyItemRecyclerViewAdapter(markerList, object : OnInteractionListener {
+//                    override fun onMarker(marker: Marker) {
+//                        super.onMarker(marker)
+//                        println("LIKED   $marker")
+//                        val gson = Gson()
+//                        val bundle = Bundle()
+//                        bundle.putSerializable("KEY_LIST_TO_MAIN", gson.toJson(marker))
+//
+//                        findNavController().navigate(R.id.action_itemFragment_to_mainFragment2, bundle)
+//                    }
+//                })
+//            }
+//        }
+//        return view
+        return binding.root
+    }
 }
