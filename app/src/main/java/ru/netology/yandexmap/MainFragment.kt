@@ -16,6 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
@@ -50,22 +51,27 @@ import com.yandex.runtime.Runtime.getApplicationContext
 import com.yandex.runtime.image.ImageProvider
 import ru.netology.yandexmap.databinding.FragmentMainBinding
 import ru.netology.yandexmap.dto.Marker
+import ru.netology.yandexmap.viewmodel.YaMapViewModel
+import kotlin.getValue
 
 class MainFragment : Fragment(), CameraListener {
 
     private val startLocation = Point(59.9402, 30.315)
     private var zoomValue: Float = 16.5f
 
-    private val markerList = mutableListOf<Marker>()
+    //    private val markerList = mutableListOf<Marker>()
     private var markerChose: Marker = Marker(id = -1)
 
     private lateinit var mapObjectCollection: MapObjectCollection
-    lateinit var searchManager: SearchManager
-    lateinit var searchSession: Session
+    private lateinit var searchManager: SearchManager
+    private lateinit var searchSession: Session
+    private var searchListenerResult: String = ""
     private val placemarkMapObjectList = mutableListOf<PlacemarkMapObject>()
 
     private val zoomBoundary = 16.4f
     private var flagAction: FlagAction = FlagAction.OFF
+
+    val viewModel by activityViewModels<YaMapViewModel>()
 
 
     private val mapObjectVisitor = object : DefaultMapObjectVisitor {
@@ -83,6 +89,7 @@ class MainFragment : Fragment(), CameraListener {
                 ?.components
                 ?.firstOrNull { it.kinds.contains(Address.Component.Kind.STREET) }
                 ?.name ?: "No information found"
+            searchListenerResult = street
             Toast.makeText(requireContext(), street, Toast.LENGTH_SHORT).show()
         }
 
@@ -124,9 +131,10 @@ class MainFragment : Fragment(), CameraListener {
                         val locationText = binding.pointNameText.text.toString()
                         mapObjectCollection.remove(mapObject)
                         setMarkerInLocation(pointPlaceMark, locationText)
-                        markerListRemoveMarker(pointPlaceMark)
-                        markerListAddMarker(pointPlaceMark, locationText)
-                        putToFile()
+                        viewModel.editMarkerViewModel(pointPlaceMark, locationText)
+//                        markerListRemoveMarker(pointPlaceMark)
+//                        markerListAddMarker(pointPlaceMark, locationText)
+//                        putToFile()
                         binding.pointNameLayout.visibility = View.GONE
 
                         true // Indicate that the event was handled
@@ -138,8 +146,9 @@ class MainFragment : Fragment(), CameraListener {
 
             FlagAction.DELETE -> {
                 mapObjectCollection.remove(mapObject)
-                markerListRemoveMarker(pointPlaceMark)
-                putToFile()
+                viewModel.removeMarkerViewModel(pointPlaceMark)
+//                markerListRemoveMarker(pointPlaceMark)
+//                putToFile()
             }
         }
         true
@@ -152,6 +161,9 @@ class MainFragment : Fragment(), CameraListener {
                     var locationText = "Memorable point"
                     val viewExist = view ?: return
                     val binding = FragmentMainBinding.bind(viewExist)
+
+                    searchSession = searchManager.submit(p1, 20, SearchOptions(), searchListener)
+                    binding.pointNameText.setText(searchListenerResult)
                     binding.pointNameLayout.visibility = View.VISIBLE
                     binding.pointNameText.requestFocus()
                     binding.pointNameText.setOnEditorActionListener { v, actionId, event ->
@@ -162,8 +174,9 @@ class MainFragment : Fragment(), CameraListener {
                             locationText = binding.pointNameText.text.toString()
 
                             setMarkerInLocation(p1, locationText)
-                            markerListAddMarker(p1, locationText)
-                            putToFile()
+                            viewModel.addMarkerViewModel(p1, locationText)
+//                            markerListAddMarker(p1, locationText)
+//                            putToFile()
                             binding.pointNameLayout.visibility = View.GONE
 
                             true // Indicate that the event was handled
@@ -219,16 +232,23 @@ class MainFragment : Fragment(), CameraListener {
 
         checkPermissions(binding.mapview.mapWindow)
 
+        viewModel.data.observe(viewLifecycleOwner) { it ->
+            mapObjectCollection.clear()
+            it.forEach { post ->
+                setMarkerInLocation(Point(post.latitude, post.longitude), post.text)
+            }
+        }
+
         searchManager = SearchFactory.getInstance().createSearchManager(SearchManagerType.ONLINE)
         binding.mapview.mapWindow.map.addInputListener(inputListener) // Добавляем слушатель long-тапов по карте с извлечением информации
         mapObjectCollection =
             binding.mapview.mapWindow.map.mapObjects // Инициализируем коллекцию различных объектов на карте
 
-        val fileExists = getFromFile()
-        if (!fileExists) setMarkerInStartLocation()
-        markerList.forEach { post ->
-            setMarkerInLocation(Point(post.latitude, post.longitude), post.text)
-        }
+//        val fileExists = getFromFile()
+//        if (!fileExists) setMarkerInStartLocation()
+//        markerList.forEach { post ->
+//            setMarkerInLocation(Point(post.latitude, post.longitude), post.text)
+//        }
         moveToStartLocation()
 
         if (markerChose.id == -1L) {
@@ -254,11 +274,12 @@ class MainFragment : Fragment(), CameraListener {
             flagAction = FlagAction.DELETE
         }
         binding.buttonList.setOnClickListener {
-            val gson = Gson()
-            val bundle = Bundle()
-            bundle.putSerializable("KEY_MAIN_TO_LIST", gson.toJson(markerList))
+//            val gson = Gson()
+//            val bundle = Bundle()
+//            bundle.putSerializable("KEY_MAIN_TO_LIST", gson.toJson(markerList))
+//            findNavController().navigate(R.id.action_mainFragment_to_itemFragment, bundle)
 
-            findNavController().navigate(R.id.action_mainFragment_to_itemFragment, bundle)
+            findNavController().navigate(R.id.action_mainFragment_to_itemFragment)
         }
     }
 
@@ -325,44 +346,6 @@ class MainFragment : Fragment(), CameraListener {
 
     private fun setMarkerInStartLocation() = setMarkerInLocation()
 
-    private fun putToFile() {
-        val appContext = getApplicationContext()
-        val gson = Gson()
-        val preferences = appContext.getSharedPreferences("prefs", Context.MODE_PRIVATE)
-        preferences.edit().apply {
-            putString("PREF_ITEM", gson.toJson(markerList))
-            commit()
-        }
-    }
-
-    private fun getFromFile(): Boolean {
-        val appContext = getApplicationContext()
-        val gson = Gson()
-        val preferences = appContext.getSharedPreferences("prefs", Context.MODE_PRIVATE)
-        val string = preferences.getString("PREF_ITEM", "")
-        if (string.isNullOrBlank()) return false
-        val token = TypeToken.getParameterized(List::class.java, Marker::class.java).type
-        val collectedPostList: List<Marker> = gson.fromJson(string, token)
-        markerList.clear()
-        markerList.addAll(collectedPostList)
-        return true
-    }
-
-    private fun markerListAddMarker(p0: Point, locationText: String) {
-        val id = markerHashCode(p0)
-        markerList.add(Marker(id, p0.latitude, p0.longitude, locationText))
-    }
-
-    private fun markerListRemoveMarker(p0: Point) {
-        val id = markerHashCode(p0)
-        val filteredMarkerList = markerList.filter { it -> it.id != id }
-        markerList.clear()
-        markerList.addAll(filteredMarkerList)
-    }
-
-    private fun markerHashCode(p0: Point): Long {
-        return (p0.latitude.toString() + p0.longitude.toString()).hashCode().toLong()
-    }
 
     private fun createBitmapFromVector(art: Int): Bitmap? {
         val drawable = ContextCompat.getDrawable(requireContext(), art) ?: return null
