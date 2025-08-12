@@ -1,7 +1,6 @@
 package ru.netology.yandexmap
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -20,6 +19,9 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.Observer
 import androidx.navigation.fragment.findNavController
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -49,6 +51,7 @@ import com.yandex.mapkit.search.ToponymObjectMetadata
 import com.yandex.runtime.Error
 import com.yandex.runtime.Runtime.getApplicationContext
 import com.yandex.runtime.image.ImageProvider
+import ru.netology.yandexmap.databinding.FragmentItemListBinding
 import ru.netology.yandexmap.databinding.FragmentMainBinding
 import ru.netology.yandexmap.dto.Marker
 import ru.netology.yandexmap.viewmodel.YaMapViewModel
@@ -57,7 +60,7 @@ import kotlin.getValue
 class MainFragment : Fragment(), CameraListener {
 
     private val startLocation = Point(59.9402, 30.315)
-    private var zoomValue: Float = 16.5f
+    private val zoomValue: Float = 16.5f
 
     //    private val markerList = mutableListOf<Marker>()
     private var markerChose: Marker = Marker(id = -1)
@@ -65,10 +68,14 @@ class MainFragment : Fragment(), CameraListener {
     private lateinit var mapObjectCollection: MapObjectCollection
     private lateinit var searchManager: SearchManager
     private lateinit var searchSession: Session
-    private var searchListenerResult: String = ""
+    private var searchResultStreetName = MutableLiveData("")
     private val placemarkMapObjectList = mutableListOf<PlacemarkMapObject>()
 
     private val zoomBoundary = 16.4f
+
+    private lateinit var iconMarker: Bitmap //= createBitmapFromVector(R.drawable.baseline_add_location_48)
+//    TODO ask question
+
     private var flagAction: FlagAction = FlagAction.OFF
 
     val viewModel by activityViewModels<YaMapViewModel>()
@@ -89,7 +96,9 @@ class MainFragment : Fragment(), CameraListener {
                 ?.components
                 ?.firstOrNull { it.kinds.contains(Address.Component.Kind.STREET) }
                 ?.name ?: "No information found"
-            searchListenerResult = street
+
+            searchResultStreetName.value = street
+
             Toast.makeText(requireContext(), street, Toast.LENGTH_SHORT).show()
         }
 
@@ -122,25 +131,33 @@ class MainFragment : Fragment(), CameraListener {
                 val binding = FragmentMainBinding.bind(viewExist)
                 binding.pointNameText.setText("NEW mark")
                 binding.pointNameLayout.visibility = View.VISIBLE
+                binding.okButton.visibility = View.VISIBLE
                 binding.pointNameText.setOnEditorActionListener { v, actionId, event ->
-                    println("ACTION   $actionId")
                     if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_SEND || actionId == EditorInfo.IME_ACTION_NEXT ||
                         (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
                     ) {
                         // Perform your action when Enter or a similar action key is pressed
-                        val locationText = binding.pointNameText.text.toString()
+                        val inputFieldTextBody = binding.pointNameText.text.toString()
                         mapObjectCollection.remove(mapObject)
-                        setMarkerInLocation(pointPlaceMark, locationText)
-                        viewModel.editMarkerViewModel(pointPlaceMark, locationText)
-//                        markerListRemoveMarker(pointPlaceMark)
-//                        markerListAddMarker(pointPlaceMark, locationText)
-//                        putToFile()
+                        setMarkerInLocation(pointPlaceMark, inputFieldTextBody)
                         binding.pointNameLayout.visibility = View.GONE
+                        binding.okButton.visibility = View.GONE
+
+                        viewModel.editMarkerViewModel(pointPlaceMark, inputFieldTextBody)
 
                         true // Indicate that the event was handled
                     } else {
                         false // Indicate that the event was not handled
                     }
+                }
+                binding.okButton.setOnClickListener {
+                    val inputFieldTextBody = binding.pointNameText.text.toString()
+                    mapObjectCollection.remove(mapObject)
+                    setMarkerInLocation(pointPlaceMark, inputFieldTextBody)
+                    binding.pointNameLayout.visibility = View.GONE
+                    binding.okButton.visibility = View.GONE
+
+                    viewModel.editMarkerViewModel(pointPlaceMark, inputFieldTextBody)
                 }
             }
 
@@ -158,31 +175,38 @@ class MainFragment : Fragment(), CameraListener {
         override fun onMapTap(p0: Map, p1: Point) {
             when (flagAction) {
                 FlagAction.CREATE -> {
-                    var locationText = "Memorable point"
                     val viewExist = view ?: return
                     val binding = FragmentMainBinding.bind(viewExist)
 
                     searchSession = searchManager.submit(p1, 20, SearchOptions(), searchListener)
-                    binding.pointNameText.setText(searchListenerResult)
+
                     binding.pointNameLayout.visibility = View.VISIBLE
+                    binding.okButton.visibility = View.VISIBLE
                     binding.pointNameText.requestFocus()
                     binding.pointNameText.setOnEditorActionListener { v, actionId, event ->
                         if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_SEND || actionId == EditorInfo.IME_ACTION_NEXT ||
                             (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
                         ) {
                             // Perform your action when Enter or a similar action key is pressed
-                            locationText = binding.pointNameText.text.toString()
-
-                            setMarkerInLocation(p1, locationText)
-                            viewModel.addMarkerViewModel(p1, locationText)
-//                            markerListAddMarker(p1, locationText)
-//                            putToFile()
+                            val inputFieldTextBody = binding.pointNameText.text.toString()
+                            setMarkerInLocation(p1, inputFieldTextBody)
                             binding.pointNameLayout.visibility = View.GONE
+                            binding.okButton.visibility = View.GONE
+
+                            viewModel.addMarkerViewModel(p1, inputFieldTextBody)
 
                             true // Indicate that the event was handled
                         } else {
                             false // Indicate that the event was not handled
                         }
+                    }
+                    binding.okButton.setOnClickListener {
+                        val inputFieldTextBody = binding.pointNameText.text.toString()
+                        setMarkerInLocation(p1, inputFieldTextBody)
+                        binding.pointNameLayout.visibility = View.GONE
+                        binding.okButton.visibility = View.GONE
+
+                        viewModel.addMarkerViewModel(p1, inputFieldTextBody)
                     }
                 }
 
@@ -198,7 +222,9 @@ class MainFragment : Fragment(), CameraListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        println("MainFragment == onCreate")
+        //todo - delete println
+        println("MainFragment ======================== onCreate")
+
         arguments?.let {
             val gson = Gson()
             val token = TypeToken.getParameterized(Marker::class.java).type
@@ -216,12 +242,16 @@ class MainFragment : Fragment(), CameraListener {
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
+        //todo - delete println
+        println("MainFragment ======================== onCreateView")
         // Inflate the layout for this fragment
         return inflater.inflate(R.layout.fragment_main, container, false)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        //todo - delete println
+        println("MainFragment ======================== onViewCreated")
 
         val binding = FragmentMainBinding.bind(view)
         val yandexMap = binding.mapview.mapWindow.map
@@ -239,8 +269,13 @@ class MainFragment : Fragment(), CameraListener {
             }
         }
 
+        searchResultStreetName.observe(viewLifecycleOwner, Observer<String> {
+            binding.pointNameText.setText(searchResultStreetName.value)
+            println(searchResultStreetName.value)
+        })
+
         searchManager = SearchFactory.getInstance().createSearchManager(SearchManagerType.ONLINE)
-        binding.mapview.mapWindow.map.addInputListener(inputListener) // Добавляем слушатель long-тапов по карте с извлечением информации
+        yandexMap.addInputListener(inputListener) // Добавляем слушатель тапов по карте с извлечением информации
         mapObjectCollection =
             binding.mapview.mapWindow.map.mapObjects // Инициализируем коллекцию различных объектов на карте
 
@@ -262,7 +297,7 @@ class MainFragment : Fragment(), CameraListener {
         }
 
         yandexMap.addCameraListener(this)
-        yandexMap.addInputListener(inputListener)
+//        yandexMap.addInputListener(inputListener)
 
         binding.buttonCreate.setOnClickListener {
             flagAction = FlagAction.CREATE
@@ -272,6 +307,9 @@ class MainFragment : Fragment(), CameraListener {
         }
         binding.buttonDelete.setOnClickListener {
             flagAction = FlagAction.DELETE
+        }
+        binding.buttonOff.setOnClickListener {
+            flagAction = FlagAction.OFF
         }
         binding.buttonList.setOnClickListener {
 //            val gson = Gson()
@@ -326,18 +364,23 @@ class MainFragment : Fragment(), CameraListener {
         locationText: String = "Обязательно к посещению!"
     ) {
         view ?: return
-        val marker =
-            createBitmapFromVector(R.drawable.baseline_add_location_48) // Добавляем ссылку на картинку
+
 //        mapObjectCollection =
 //            binding.mapview.mapWindow.map.mapObjects // Инициализируем коллекцию различных объектов на карте
 
-
+        if (!this::iconMarker.isInitialized) {
+            iconMarker = createBitmapFromVector(R.drawable.baseline_add_location_48)!!
+            //todo - delete println
+            println("setMarkerInLocation - init - black")
+        }
         val placemarkMapObject = mapObjectCollection.addPlacemark().apply {
             geometry = location
-            setIcon(ImageProvider.fromBitmap(marker))
+            setIcon(ImageProvider.fromBitmap(iconMarker))
             opacity = 0.5f // Устанавливаем прозрачность метке
             setText(locationText)
         } // Добавляем метку со значком
+        //todo - delete println
+        println("setMarkerInLocation - метка++")
 
 //        postList.add(Post(0, location.latitude, location.longitude, locationText))
 //        putToFile()
@@ -348,6 +391,7 @@ class MainFragment : Fragment(), CameraListener {
 
 
     private fun createBitmapFromVector(art: Int): Bitmap? {
+
         val drawable = ContextCompat.getDrawable(requireContext(), art) ?: return null
         val bitmap = createBitmap(drawable.intrinsicWidth, drawable.intrinsicHeight)
         val canvas = Canvas(bitmap)
@@ -363,28 +407,27 @@ class MainFragment : Fragment(), CameraListener {
         finished: Boolean
     ) {
         if (finished) { // Если камера закончила движение mapObjectCollection.clear()
+            //todo - delete println
+            println("onCameraPositionChanged - finished")
             placemarkMapObjectList.clear()
             mapObjectCollection.traverse(mapObjectVisitor)
             when {
                 cameraPosition.zoom > zoomBoundary -> {
+                    iconMarker = createBitmapFromVector(R.drawable.baseline_add_location_48_red)!!
                     placemarkMapObjectList.forEach {
-                        it.setIcon(
-                            ImageProvider.fromBitmap(
-                                createBitmapFromVector(R.drawable.baseline_add_location_48_red)
-                            )
-                        )
+                        it.setIcon(ImageProvider.fromBitmap(iconMarker))
                     }
-
+                    //todo - delete println
+                    println("onCameraPositionChanged - RED")
                 }
 
                 cameraPosition.zoom <= zoomBoundary -> {
+                    iconMarker = createBitmapFromVector(R.drawable.baseline_add_location_48)!!
                     placemarkMapObjectList.forEach {
-                        it.setIcon(
-                            ImageProvider.fromBitmap(
-                                createBitmapFromVector(R.drawable.baseline_add_location_48)
-                            )
-                        )
+                        it.setIcon(ImageProvider.fromBitmap(iconMarker))
                     }
+                    //todo - delete println
+                    println("onCameraPositionChanged - BLACK")
                 }
             }
         }
