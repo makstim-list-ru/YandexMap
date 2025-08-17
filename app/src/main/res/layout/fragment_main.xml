@@ -45,6 +45,7 @@
         app:layout_constraintTop_toTopOf="@+id/mapview">
 
         <RadioGroup
+            android:id="@+id/radio_group"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
@@ -76,7 +77,6 @@
                 android:id="@+id/button_off"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:checked="true"
                 android:text="off" />
 
         </RadioGroup>
@@ -125,6 +125,17 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="@id/point_name_layout"
         tools:visibility="visible" />
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/my_geoposition"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="32dp"
+        android:contentDescription="Add button"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:srcCompat="@drawable/baseline_home_24"
+        style="?attr/floatingActionButtonSmallTertiaryStyle"/>
 
 
 </androidx.constraintlayout.widget.ConstraintLayout>

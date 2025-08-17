@@ -7,25 +7,18 @@ import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import ru.netology.yandexmap.databinding.FragmentItemListBinding
-import ru.netology.yandexmap.databinding.FragmentMainBinding
 import ru.netology.yandexmap.dto.Marker
 import ru.netology.yandexmap.viewmodel.YaMapViewModel
-import kotlin.getValue
-
 
 class ItemFragment : Fragment() {
-
-//    private var markerList = emptyList<Marker>()
 
     val viewModel by activityViewModels<YaMapViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        println("ItemFragment =========== onCreate")
 
 //        arguments?.let {
 //            val gson = Gson()
@@ -42,7 +35,7 @@ class ItemFragment : Fragment() {
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-
+        println("ItemFragment =========== onCreateView")
         val binding = FragmentItemListBinding.inflate(inflater, container, false)
         val markerList = viewModel.data.value ?: emptyList()
 
@@ -51,7 +44,6 @@ class ItemFragment : Fragment() {
             object : OnInteractionListener {
                 override fun onMarker(marker: Marker) {
                     super.onMarker(marker)
-                    println("LIKED   $marker")
                     val gson = Gson()
                     val bundle = Bundle()
                     bundle.putSerializable("KEY_LIST_TO_MAIN", gson.toJson(marker))
